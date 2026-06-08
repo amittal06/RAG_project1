@@ -3,17 +3,26 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from ingest import ingest_file, get_chunk_count
+from ingest import ingest_file, get_chunk_count, get_vectorstore
 from rag import query
 
 st.set_page_config(page_title="RAG Document Q&A", layout="wide")
+
+
+@st.cache_resource(show_spinner="Loading embedding model...")
+def shared_vectorstore():
+    """Initialised once per server lifetime; reused on every rerun."""
+    return get_vectorstore()
+
+
+vs = shared_vectorstore()
 
 # --- Sidebar ---
 with st.sidebar:
     st.title("RAG Document Q&A")
     st.markdown("Upload documents, then ask questions about their content.")
     st.divider()
-    count = get_chunk_count()
+    count = get_chunk_count(vs)
     st.metric("Chunks in vector store", count)
     st.caption("Powered by Chroma + HuggingFace embeddings + GPT-4o-mini")
 
@@ -37,7 +46,7 @@ with tab_upload:
             for f in uploaded_files:
                 with st.spinner(f"Processing {f.name}..."):
                     try:
-                        n = ingest_file(f)
+                        n = ingest_file(f, vs)
                         results.append((f.name, n, None))
                     except Exception as e:
                         results.append((f.name, 0, str(e)))
@@ -76,11 +85,11 @@ with tab_ask:
     # Input
     question = st.chat_input("Ask a question about your documents...")
     if question:
-        if get_chunk_count() == 0:
+        if get_chunk_count(vs) == 0:
             st.warning("No documents ingested yet. Please upload files in the Upload tab first.")
         else:
             with st.spinner("Thinking..."):
-                result = query(question)
+                result = query(question, vs)
 
             st.session_state.history.append({
                 "question": question,

@@ -18,7 +18,10 @@ EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 def get_embeddings() -> HuggingFaceEmbeddings:
-    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    return HuggingFaceEmbeddings(
+        model_name=EMBEDDING_MODEL,
+        model_kwargs={"local_files_only": True},
+    )
 
 
 def get_vectorstore() -> Chroma:
@@ -53,7 +56,7 @@ def split_documents(docs: list) -> list:
     return splitter.split_documents(docs)
 
 
-def ingest_file(uploaded_file) -> int:
+def ingest_file(uploaded_file, vectorstore: Chroma = None) -> int:
     suffix = Path(uploaded_file.name).suffix
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(uploaded_file.read())
@@ -61,7 +64,6 @@ def ingest_file(uploaded_file) -> int:
 
     try:
         docs = load_document(tmp_path, suffix)
-        # Attach original filename to metadata
         for doc in docs:
             doc.metadata["source"] = uploaded_file.name
 
@@ -78,16 +80,16 @@ def ingest_file(uploaded_file) -> int:
         if not chunks:
             raise ValueError("Document was loaded but produced no usable text chunks after splitting.")
 
-        vectorstore = get_vectorstore()
-        vectorstore.add_documents(chunks)
+        vs = vectorstore or get_vectorstore()
+        vs.add_documents(chunks)
         return len(chunks)
     finally:
         os.unlink(tmp_path)
 
 
-def get_chunk_count() -> int:
+def get_chunk_count(vectorstore: Chroma = None) -> int:
     try:
-        vs = get_vectorstore()
+        vs = vectorstore or get_vectorstore()
         return vs._collection.count()
     except Exception:
         return 0
